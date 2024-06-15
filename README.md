@@ -1,4 +1,4 @@
-<center><h1>temgen</h1></center>
+<h1 align="center">temgen</h1>
 
 A simple template generator for creating latex/typst article/presentation
 templates.
@@ -7,7 +7,8 @@ templates.
 
 ```bash
 temgen -h
-temgen [-lf] identity [output]
+temgen -l
+temgen [-f] identity [output]
 ```
 
 - `-h`: Show help message.
