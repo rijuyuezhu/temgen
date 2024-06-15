@@ -171,7 +171,15 @@ def main():
     template_path = find_template_path()
     if args.list:
         for subdir in os.listdir(template_path):
-            print(subdir)
+            try:
+                (media, lang, name) = subdir.split('-', 2)
+                if not (media == "art" or media == "pre"):
+                    continue
+                if not (lang == "latex" or lang == "typst"):
+                    continue
+                print(subdir)
+            except:
+                pass
         sys.exit(0)
     (media, lang, name) = resolve_identity(args.identity)
     tem = search_template(template_path, media, lang, name)
