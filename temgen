@@ -1,0 +1,188 @@
+#!/usr/bin/env python3
+
+import argparse
+import sys
+import os
+import readline
+from nltk.metrics.distance import edit_distance
+
+C_RED = "\033[31m"
+C_NONE = "\033[0m"
+C_CYAN = "\033[36m"
+
+
+def find_template_path():
+    template_path = None
+
+    def update_path(nowpath):
+        nonlocal template_path
+
+        if not template_path and os.path.exists(nowpath) and os.path.isdir(nowpath):
+            template_path = nowpath
+
+    if 'TEMGEN_TEM_PATH' in os.environ:
+        update_path(os.environ['TEMGEN_TEM_PATH'])
+        if template_path:
+            return template_path
+        else:
+            raise FileNotFoundError(
+                "TEMGEN_DATA_PATH is set but the path is not found")
+
+    config_file = os.path.expanduser("~/.config/temgen/temgen.conf")
+    if os.path.exists(config_file):
+        with open(config_file, "r") as f:
+            for line in f:
+                update_path(os.path.expanduser(line.strip()))
+                break
+    update_path(os.path.expanduser("~/.local/share/temgen/template"))
+    update_path("/usr/share/temgen/template")
+    update_path(os.path.join(os.path.dirname(__file__), "/template"))
+    if not template_path:
+        raise FileNotFoundError("No template path found")
+    return template_path
+
+
+def resolve_args():
+    parser = argparse.ArgumentParser(
+        description="temgen is used to generate templates for \
+latex/typst-based projects",
+        epilog="examples:"
+    )
+
+    parser.add_argument('-l', '--list', action='store_true',
+                        help="List all available templates")
+    parser.add_argument('-f', '--force', action='store_true',
+                        help="Force to overwrite the output directory")
+    parser.add_argument('identity', nargs='?', type=str, help="""
+The identity of the template. Shall be of the form {a,p}{l,t}[:name].
+""")
+
+    parser.add_argument('output', nargs='?', type=str,
+                        help="The output directory. Defaults to the current directory (bare).")
+    return parser.parse_args()
+
+
+def resolve_identity(identity):
+    id_part = None
+    media = None
+    lang = None
+    name = None
+    if ":" in identity:
+        id_part, name = identity.split(":")
+    else:
+        id_part = identity
+    for ch in id_part:
+        if ch == "a":
+            media = "art"
+        elif ch == "p":
+            media = "pre"
+        elif ch == "l":
+            lang = "latex"
+        elif ch == "t":
+            lang = "typst"
+        else:
+            raise ValueError("Invalid identity")
+    if not media or not lang:
+        raise ValueError("Invalid identity")
+    return (media, lang, name)
+
+
+def find_closet_match(subdirs, name):
+    best = None
+    best_dist = -1
+    for subdir in subdirs:
+        dist = edit_distance(subdir.split('-', 2)[2], name)
+        if best_dist == -1 or dist < best_dist:
+            best = subdir
+            best_dist = dist
+    if best_dist == -1 or best_dist > 3:
+        raise FileNotFoundError("No template found")
+    return best
+
+
+def interactive_select(media, lang, subdirs):
+    print(f"Please select a template for {C_CYAN}{media} {lang}{C_NONE}:")
+    for i, subdir in enumerate(subdirs):
+        print(f"{i+1:2}. {C_CYAN}{subdir.split('-', 2)[2]}{C_NONE}")
+    print("-----------")
+    print(" q. To quit")
+    while True:
+        try:
+            choice = input("Your choice: ")
+            if choice == "q":
+                sys.exit(0)
+            choice = int(choice)
+            if choice < 1 or choice > len(subdirs):
+                raise ValueError("Invalid choice")
+            return subdirs[choice-1]
+        except ValueError:
+            print("Invalid choice")
+
+
+def search_template(template_path, media, lang, name):
+    # check args
+    if not os.path.exists(template_path):
+        raise FileNotFoundError("Template path not found")
+    if not os.path.isdir(template_path):
+        raise FileNotFoundError("Template path is not a directory")
+
+    if not os.path.exists(template_path):
+        raise FileNotFoundError("Template not found")
+    if not os.path.isdir(template_path):
+        raise FileNotFoundError("Template is not a directory")
+
+    subdirs = os.listdir(template_path)
+
+    def filter_func(x):
+        try:
+            (x_media, x_lang, _) = x.split('-', 2)
+        except ValueError:
+            return False
+        return x_media == media and x_lang == lang
+
+    subdirs = list(filter(filter_func, subdirs))
+    if not subdirs:
+        raise FileNotFoundError("No template found")
+    if name:
+        tem = find_closet_match(subdirs, name)
+    else:
+        tem = interactive_select(media, lang, subdirs)
+    return tem
+
+
+def generate_template(tem, output, force):
+    if not output:
+        output = os.getcwd()
+    output = os.path.realpath(output)
+    if not os.path.exists(output):
+        os.makedirs(output)
+    if not os.path.isdir(output):
+        raise FileNotFoundError(f"Output \"{output}\" is not a directory")
+    # require the output directory to be empty
+    if os.listdir(output) and not force:
+        raise FileNotFoundError(f"Output directory \"{output}\" is not empty")
+    print(f"Copying template {C_CYAN}{os.path.basename(tem)}\
+{C_NONE} to {C_CYAN}{output}{C_NONE}")
+    os.system(f"cp -r {tem}/* {output}")
+
+
+def main():
+    args = resolve_args()
+    template_path = find_template_path()
+    if args.list:
+        for subdir in os.listdir(template_path):
+            print(subdir)
+        sys.exit(0)
+    (media, lang, name) = resolve_identity(args.identity)
+    tem = search_template(template_path, media, lang, name)
+    assert tem
+    full_tem_path = os.path.join(template_path, tem)
+    generate_template(full_tem_path, args.output, args.force)
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except Exception as e:
+        print(f"Error: {e}")
+        sys.exit(1)
